@@ -1,3 +1,5 @@
+import asyncio
+
 from homeassistant.core import HomeAssistant
 
 from homeassistant.components.button import ButtonDeviceClass
@@ -42,6 +44,9 @@ async def async_setup_entry(
 
             if not entry["isParent"] and entry["controller"].isKLAP is False:
                 buttons.append(TapoSyncTimeButton(entry, hass, config_entry))
+
+            if entry.get("isRunningOnBattery"):
+                buttons.append(TapoWakeUpButton(entry, hass, config_entry))
 
         tapoCalibrateButton = await check_and_create(
             entry, hass, TapoCalibrateButton, "getPresets", config_entry
@@ -104,6 +109,27 @@ class TapoRebootButton(TapoButtonEntity):
     @property
     def entity_category(self):
         return EntityCategory.CONFIG
+
+
+class TapoWakeUpButton(TapoButtonEntity):
+    def __init__(self, entry: dict, hass: HomeAssistant, config_entry):
+        TapoButtonEntity.__init__(self, "Wake Up", entry, hass, "mdi:sleep-off")
+
+    async def async_press(self) -> None:
+        # A TCP connection attempt to the live view port wakes sleeping battery
+        # cameras. Attempts from the subnet gateway IP are ignored by the camera.
+        try:
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(self._controller.host, 28800), timeout=5
+            )
+            writer.close()
+            await writer.wait_closed()
+        except Exception as err:
+            LOGGER.warning(f"Wake up request failed: {err}")
+
+    @property
+    def entity_category(self):
+        return None
 
 
 class TapoFormatButton(TapoButtonEntity):
